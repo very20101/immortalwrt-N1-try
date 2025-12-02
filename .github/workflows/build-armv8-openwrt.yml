@@ -174,7 +174,8 @@ jobs:
 
     - name: Packaging OpenWrt
       if: steps.compile.conclusion == 'success'
-      uses: haiibo/flippy-openwrt-actions@main
+      #uses: haiibo/flippy-openwrt-actions@main
+      uses: unifreq/openwrt_packit@master
       env:
         OPENWRT_ARMSR: openwrt/bin/targets/*/*/*rootfs.tar.gz
         PACKAGE_SOC: s905d
