@@ -30,7 +30,7 @@ on:
       openwrt_kernel:
         description: '选择内核版本'
         required: false
-        default: '6.1.y_6.6.y'
+        default: '5.15.y_6.1.y_6.6.y_6.12.y'
 
       kernel_repo:
         description: '选择内核存储库'
@@ -127,7 +127,7 @@ jobs:
 
     - name: Use Flippy Script Packaging
       if: steps.download.conclusion == 'success' && github.event.inputs.script_repo == 'flippy'
-      uses: haiibo/flippy-openwrt-actions@main
+      uses: unifreq/openwrt_packit@master
       env:
         OPENWRT_ARMSR: openwrt/bin/targets/*/*/*rootfs.tar.gz
         PACKAGE_SOC: ${{ github.event.inputs.openwrt_board }}
@@ -135,7 +135,7 @@ jobs:
         KERNEL_VERSION_NAME: ${{ github.event.inputs.openwrt_kernel }}
         KERNEL_AUTO_LATEST: ${{ github.event.inputs.auto_kernel }}
         CUSTOMIZE_RK3399: ${{ github.event.inputs.customize_rk3399 }}
-        WHOAMI: flippy
+        WHOAMI: very20101
 
     - name: Use Ophub Script Packaging
       if: steps.download.conclusion == 'success' && github.event.inputs.script_repo == 'ophub'
