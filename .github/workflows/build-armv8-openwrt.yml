@@ -98,23 +98,76 @@ jobs:
         sudo timedatectl set-timezone "$TZ"
 
     - name: Combine Disks
-      run: |
-        MNT_SIZE=$((($(df --block-size=1024 --output=avail /mnt | tail -1) - 1024*1024*1) * 1024))
-        sudo fallocate -l $MNT_SIZE /mnt/mnt.img
-        MNT_NAME=$(sudo losetup -Pf --show /mnt/mnt.img)
-        sudo pvcreate -f $MNT_NAME
-        ROOT_SIZE=$((($(df --block-size=1024 --output=avail / | tail -1) - 1024*1024*4) * 1024))
-        sudo fallocate -l $ROOT_SIZE /root.img
-        ROOT_NAME=$(sudo losetup -Pf --show /root.img)
-        sudo pvcreate -f $ROOT_NAME
-        sudo vgcreate actions $MNT_NAME $ROOT_NAME
-        sudo lvcreate -n disk -l 100%FREE actions
-        LV_NAME=$(sudo lvscan | awk -F "'" '{print $2}')
-        sudo mkfs.btrfs -L combinedisk $LV_NAME
-        sudo mkdir -p /workdir
-        sudo mount -o compress=zstd $LV_NAME /workdir
-        sudo chown -R runner:runner /workdir && df -hT
+      # Combine Disks (robust)
+       set -euo pipefail
+      # ensure mount point exists
+       sudo mkdir -p /mnt
+      # helper to get available KB (returns 0 if df fails)
+       get_avail_kb() {
+      path="$1" 
+       avail=$(df --block-size=1024 --output=avail "$path" 2>/dev/null | tail -n1 || echo 0)
+      # strip non-digits (be defensive)
+       avail="${avail//[^0-9]/}"
+       echo "${avail:-0}"}
 
+      # reserves in KB
+      RESERVE_MNT_KB=$((1024*1024*1))   # 1GB reserved on /mnt
+      RESERVE_ROOT_KB=$((1024*1024*4))  # 4GB reserved on /
+
+      # minimum fallback sizes (bytes)
+      MIN_MNT_BYTES=$((1 * 1024 * 1024 * 1024))   # 1GB
+      MIN_ROOT_BYTES=$((1 * 1024 * 1024 * 1024))  # 1GB fallback (instead of forcing 4GB)
+
+      MNT_AVAIL_KB=$(get_avail_kb /mnt)
+      ROOT_AVAIL_KB=$(get_avail_kb /)
+
+      echo "Available on /mnt: ${MNT_AVAIL_KB} KB"
+      echo "Available on /:    ${ROOT_AVAIL_KB} KB"
+
+      # compute sizes (bytes). If computed <=0, fallback to MIN_*_BYTES
+       if [ "$MNT_AVAIL_KB" -gt "$RESERVE_MNT_KB" ]; then
+       MNT_SIZE_BYTES=$(( (MNT_AVAIL_KB - RESERVE_MNT_KB) * 1024 ))
+        else
+       echo "Warning: not enough available space on /mnt. Falling back to ${MIN_MNT_BYTES} bytes for mnt.img"
+       MNT_SIZE_BYTES=$MIN_MNT_BYTES
+      fi
+
+      if [ "$ROOT_AVAIL_KB" -gt "$RESERVE_ROOT_KB" ]; then
+      ROOT_SIZE_BYTES=$(( (ROOT_AVAIL_KB - RESERVE_ROOT_KB) * 1024 ))
+      else
+      echo "Warning: not enough available space on /. Falling back to ${MIN_ROOT_BYTES} bytes for root.img"
+      ROOT_SIZE_BYTES=$MIN_ROOT_BYTES
+      fi
+
+      echo "Creating /mnt/mnt.img of ${MNT_SIZE_BYTES} bytes"
+      sudo rm -f /mnt/mnt.img
+      if ! sudo fallocate -l "${MNT_SIZE_BYTES}" /mnt/mnt.img 2>/dev/null; then
+      echo "fallocate failed for /mnt/mnt.img, using truncate"
+      sudo truncate -s "${MNT_SIZE_BYTES}" /mnt/mnt.img
+      fi
+
+      MNT_NAME=$(sudo losetup -Pf --show /mnt/mnt.img)
+      sudo pvcreate -f "$MNT_NAME"
+
+      echo "Creating /root.img of ${ROOT_SIZE_BYTES} bytes"
+      sudo rm -f /root.img
+      if ! sudo fallocate -l "${ROOT_SIZE_BYTES}" /root.img 2>/dev/null; then
+      echo "fallocate failed for /root.img, using truncate"
+      sudo truncate -s "${ROOT_SIZE_BYTES}" /root.img
+      fi
+
+      ROOT_NAME=$(sudo losetup -Pf --show /root.img)
+      sudo pvcreate -f "$ROOT_NAME"
+
+      # proceed with LVM creation
+      sudo vgcreate actions "$MNT_NAME" "$ROOT_NAME"
+      sudo lvcreate -n disk -l 100%FREE actions
+      LV_NAME=$(sudo lvscan | awk -F "'" '{print $2}')
+      sudo mkfs.btrfs -L combinedisk "$LV_NAME"
+       sudo mkdir -p /workdir
+       sudo mount -o compress=zstd "$LV_NAME" /workdir
+       sudo chown -R runner:runner /workdir && df -hT
+      
     - name: Load Compile Script
       run: chmod +x $DIY_SCRIPT && ./$DIY_SCRIPT
 
