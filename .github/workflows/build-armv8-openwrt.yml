@@ -97,23 +97,23 @@ jobs:
         sudo -E apt-get -y clean
         sudo timedatectl set-timezone "$TZ"
 
-    - name: Combine Disks
-      run: |
-        MNT_SIZE=$((($(df --block-size=1024 --output=avail /mnt | tail -1) - 1024*1024*1) * 1024))
-        sudo fallocate -l $MNT_SIZE /mnt/mnt.img
-        MNT_NAME=$(sudo losetup -Pf --show /mnt/mnt.img)
-        sudo pvcreate -f $MNT_NAME
-        ROOT_SIZE=$((($(df --block-size=1024 --output=avail / | tail -1) - 1024*1024*4) * 1024))
-        sudo fallocate -l $ROOT_SIZE /root.img
-        ROOT_NAME=$(sudo losetup -Pf --show /root.img)
-        sudo pvcreate -f $ROOT_NAME
-        sudo vgcreate actions $MNT_NAME $ROOT_NAME
-        sudo lvcreate -n disk -l 100%FREE actions
-        LV_NAME=$(sudo lvscan | awk -F "'" '{print $2}')
-        sudo mkfs.btrfs -L combinedisk $LV_NAME
-        sudo mkdir -p /workdir
-        sudo mount -o compress=zstd $LV_NAME /workdir
-        sudo chown -R runner:runner /workdir && df -hT
+        - name: Combine Disks
+          run: |
+          if mountpoint -q /mnt; then
+            mnt_size=$(($(df -k --output=avail /mnt | tail -1) / 1024 - 1024))
+            sudo truncate -s ${mnt_size}M /mnt/mnt.img
+            loop_mnt=$(sudo losetup -f --show /mnt/mnt.img)
+          fi
+          root_size=$(($(df -k --output=avail / | tail -1) / 1024 - 4096))
+          sudo truncate -s ${root_size}M /root.img
+          loop_root=$(sudo losetup -f --show /root.img)
+          sudo pvcreate -f $loop_mnt $loop_root
+          sudo vgcreate github $loop_mnt $loop_root
+          sudo lvcreate -n runner -l 100%FREE github
+          sudo mkfs.btrfs -f /dev/github/runner
+          sudo mkdir -p /workdir
+          sudo mount -o compress=zstd /dev/github/runner /workdir
+          sudo chown -R runner:runner /workdir && df -hT
 
     - name: Load Compile Script
       run: chmod +x $DIY_SCRIPT && ./$DIY_SCRIPT
