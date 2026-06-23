@@ -98,15 +98,13 @@ jobs:
         sudo timedatectl set-timezone "$TZ"
 
     - name: Combine Disks
-     run : |
+      run: |
       # Combine Disks (robust)
        set -euo pipefail
       # ensure mount point exists
        sudo mkdir -p /mnt
       # helper to get available KB (returns 0 if df fails)
-       get_avail_kb() {
-      path="$1" 
-       avail=$(df --block-size=1024 --output=avail "$path" 2>/dev/null | tail -n1 || echo 0)
+       get_avail_kb() {path="$1" avail=$(df --block-size=1024 --output=avail "$path" 2>/dev/null | tail -n1 || echo 0)
       # strip non-digits (be defensive)
        avail="${avail//[^0-9]/}"
        echo "${avail:-0}"}
